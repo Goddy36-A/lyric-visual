@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lyric Visuals</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#14110f;--panel:#1d1916;--line:#3a322c;--ink:#f3ece4;--mute:#a69a8d;--accent:#e8b04a;}
+*{box-sizing:border-box;margin:0}
+body{font-family:'Bricolage Grotesque',system-ui,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;display:grid;grid-template-columns:340px 1fr}
+aside{background:var(--panel);border-right:1px solid var(--line);padding:24px;display:flex;flex-direction:column;gap:16px}
+h1{font-size:22px;font-weight:800;letter-spacing:-.02em}
+label{font-size:13px;color:var(--mute);display:block;margin-bottom:6px}
+textarea,input,select{width:100%;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:10px;font:inherit;font-size:14px}
+textarea{min-height:240px;resize:vertical;line-height:1.5}
+.row{display:flex;gap:10px}.row>div{flex:1}
+button{font:inherit;cursor:pointer;border:0;border-radius:6px;padding:11px 14px;font-weight:600}
+.primary{background:var(--accent);color:#1a1205}.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+button:disabled{opacity:.5;cursor:wait}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+main{display:flex;flex-direction:column;padding:24px;gap:14px;min-width:0}
+.stage{position:relative;flex:1;min-height:360px;background:#000;border-radius:10px;overflow:hidden}
+.layer{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 1.2s ease}
+.layer.on{opacity:1}
+.shade{position:absolute;inset:0;background:linear-gradient(transparent 40%,rgba(0,0,0,.75))}
+.caption{position:absolute;left:6%;right:6%;bottom:9%;font-size:clamp(26px,4.2vw,56px);font-weight:800;line-height:1.08;letter-spacing:-.02em;text-shadow:0 2px 18px rgba(0,0,0,.6)}
+.empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--mute);padding:30px;text-align:center}
+.controls{display:flex;gap:10px;align-items:center}
+.status{color:var(--mute);font-size:13px;margin-left:auto}
+.strip{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}
+.strip button{flex:0 0 auto;width:150px;padding:8px;text-align:left;background:var(--panel);color:var(--mute);border:1px solid var(--line);font-weight:400;font-size:12px}
+.strip button.cur{border-color:var(--accent);color:var(--ink)}
+.strip small{display:block;color:var(--accent);margin-bottom:3px}
+@media(max-width:820px){body{grid-template-columns:1fr}aside{border-right:0;border-bottom:1px solid var(--line)}}
+@media(prefers-reduced-motion:reduce){.layer{transition:none}}
+</style>
+</head>
+<body>
+<aside>
+  <h1>Lyric Visuals</h1>
+  <div><label for="lyrics">Lyrics (one line per scene)</label>
+  <textarea id="lyrics" placeholder="Paste lyrics here"></textarea></div>
+  <div class="row">
+    <div><label for="media">Visuals</label><select id="media"><option value="image">Images</option><option value="video">Videos</option></select></div>
+    <div><label for="secs">Seconds per line</label><input id="secs" type="number" min="1" max="20" value="4"></div>
+  </div>
+  <div><label for="style">Style words (optional)</label><input id="style" placeholder="dark moody cinematic"></div>
+  <button class="primary" id="go">Generate visuals</button>
+</aside>
+<main>
+  <div class="stage" id="stage">
+    <video class="layer" id="vA" muted playsinline loop></video>
+    <video class="layer" id="vB" muted playsinline loop></video>
+    <img class="layer" id="iA" alt=""><img class="layer" id="iB" alt="">
+    <div class="shade"></div>
+    <div class="caption" id="cap"></div>
+    <div class="empty" id="empty">Paste lyrics and press Generate visuals.</div>
+  </div>
+  <div class="controls">
+    <button class="ghost" id="prev">Previous</button>
+    <button class="primary" id="play">Play</button>
+    <button class="ghost" id="next">Next</button>
+    <span class="status" id="status"></span>
+  </div>
+  <div class="strip" id="strip"></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let scenes=[],cur=0,timer=null,flip=false;
+const setStatus=t=>$('status').textContent=t;
+
+function showScene(i){
+  if(!scenes.length)return;
+  cur=(i+scenes.length)%scenes.length;
+  const s=scenes[cur];
+  $('empty').style.display='none';
+  $('cap').textContent=s.line;
+  flip=!flip;
+  const isVid=s.media==='video';
+  const el=isVid?(flip?$('vA'):$('vB')):(flip?$('iA'):$('iB'));
+  if(s.url&&el.dataset.src!==s.url){el.src=s.url;el.dataset.src=s.url}
+  if(isVid)el.play().catch(()=>{});
+  document.querySelectorAll('.layer').forEach(l=>l.classList.remove('on'));
+  if(s.url)el.classList.add('on');
+  document.querySelectorAll('.strip button').forEach((b,k)=>b.classList.toggle('cur',k===cur));
+}
+function play(){
+  if(timer){clearInterval(timer);timer=null;$('play').textContent='Play';return}
+  $('play').textContent='Pause';
+  const ms=Math.max(1,+$('secs').value||4)*1000;
+  timer=setInterval(()=>showScene(cur+1),ms);
+}
+function buildStrip(){
+  $('strip').innerHTML='';
+  scenes.forEach((s,i)=>{
+    const b=document.createElement('button');
+    const q=document.createElement('small');q.textContent=s.query;
+    b.append(q,document.createTextNode(s.line.slice(0,48)));
+    b.onclick=()=>showScene(i);
+    $('strip').append(b);
+  });
+}
+$('go').onclick=async()=>{
+  const lines=$('lyrics').value.split('\n').map(l=>l.trim()).filter(Boolean);
+  if(!lines.length){setStatus('Add some lyrics first.');return}
+  $('go').disabled=true;setStatus('Finding visuals. The first request can take up to a minute while the server wakes.');
+  if(timer)play();
+  try{
+    const r=await fetch('/visuals',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({lines,style:$('style').value.trim(),media:$('media').value})});
+    if(!r.ok)throw new Error('Server returned '+r.status);
+    scenes=await r.json();
+    buildStrip();showScene(0);
+    const missing=scenes.filter(s=>!s.url).length;
+    setStatus(missing?`${scenes.length} scenes, ${missing} without a visual. Check your Pixabay key.`:`${scenes.length} scenes ready.`);
+  }catch(e){setStatus('Could not load visuals: '+e.message)}
+  $('go').disabled=false;
+};
+$('play').onclick=play;
+$('prev').onclick=()=>showScene(cur-1);
+$('next').onclick=()=>showScene(cur+1);
+fetch('/health').catch(()=>{}); // wake the server on page load
+</script>
+</body>
+</html>
