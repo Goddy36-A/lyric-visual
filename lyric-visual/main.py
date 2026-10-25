@@ -1,5 +1,5 @@
-import os, re, httpx, numpy as np
-from fastapi import FastAPI
+import os, re, hmac, httpx, numpy as np
+from fastapi import FastAPI, Depends, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -8,6 +8,7 @@ from pydantic import BaseModel
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 PIXABAY_KEY = os.environ.get("PIXABAY_KEY", "")
+APP_API_KEY = os.environ.get("APP_API_KEY", "")
 USE_EMBEDDINGS = os.environ.get("USE_EMBEDDINGS", "1") == "1"
 
 # 1) RULES: abstract lyric words -> searchable visuals (grow this over time)
@@ -91,8 +92,28 @@ class Req(BaseModel):
     media: str = "image"          # "image" or "video"
     default_query: str = "abstract light"
 
-@app.post("/visuals")
+def require_key(x_api_key: str = Header(default="")):
+    if not APP_API_KEY:
+        raise HTTPException(503, "APP_API_KEY is not configured on the server")
+    if not hmac.compare_digest(x_api_key, APP_API_KEY):
+        raise HTTPException(401, "Invalid or missing X-API-Key")
+
+@app.post("/visuals")          # used by the built-in web page
 async def visuals(req: Req):
+    return await build(req)
+
+@app.post("/v1/visuals", dependencies=[Depends(require_key)])   # for your other apps
+async def v1_visuals(req: Req):
+    if len(req.lines) > 200:
+        raise HTTPException(400, "Max 200 lines per request")
+    return await build(req)
+
+@app.get("/v1/visual", dependencies=[Depends(require_key)])     # one line, simple GET
+async def v1_visual(line: str, media: str = "image", style: str = ""):
+    res = await build(Req(lines=[line], media=media, style=style))
+    return res[0]
+
+async def build(req: Req):
     out, prev_q, prev_url = [], None, None
     for line in req.lines:
         if not line.strip():
