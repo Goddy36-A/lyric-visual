@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lyric Visuals API guide</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#14110f;--panel:#1d1916;--line:#3a322c;--ink:#f3ece4;--mute:#a69a8d;--accent:#e8b04a;}
+*{box-sizing:border-box;margin:0}
+body{font-family:'Bricolage Grotesque',system-ui,sans-serif;background:var(--bg);color:var(--ink);line-height:1.55}
+.wrap{max-width:820px;margin:0 auto;padding:32px 20px 80px}
+h1{font-size:30px;font-weight:800;letter-spacing:-.02em;margin-bottom:6px}
+h2{font-size:20px;font-weight:600;margin:36px 0 10px}
+p,li{color:var(--mute);max-width:70ch}p{margin-bottom:10px}
+a{color:var(--accent)}
+code{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:1px 6px;color:var(--ink);font-size:.92em}
+.tabs{display:flex;gap:6px;margin:12px 0 0;flex-wrap:wrap}
+.tabs button{font:inherit;background:var(--panel);color:var(--mute);border:1px solid var(--line);border-bottom:0;border-radius:6px 6px 0 0;padding:8px 14px;cursor:pointer}
+.tabs button.on{color:var(--ink);border-color:var(--accent)}
+pre{background:var(--panel);border:1px solid var(--line);border-radius:0 6px 6px 6px;padding:16px;overflow-x:auto;color:var(--ink);font-size:13px;line-height:1.5}
+table{border-collapse:collapse;width:100%;margin:8px 0}
+td,th{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left;font-size:14px;vertical-align:top}
+th{color:var(--ink)}td{color:var(--mute)}
+.try{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;display:grid;gap:10px}
+input,select{background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:10px;font:inherit;font-size:14px;width:100%}
+.try button{font:inherit;font-weight:600;background:var(--accent);color:#1a1205;border:0;border-radius:6px;padding:11px;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.warn{border-left:3px solid var(--accent);padding:4px 14px;margin:12px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+<p><a href="/">Back to the app</a></p>
+<h1>Lyric Visuals API</h1>
+<p>Send lyric lines, get back a matching image or video link for each line. Works from any desktop, Android, iOS or web app that can make an HTTPS request.</p>
+
+<h2>Base URL and authentication</h2>
+<p>Base URL: <code id="base"></code></p>
+<p>Every <code>/v1</code> request needs your key in the <code>X-API-Key</code> header. The key is the <code>APP_API_KEY</code> value set on the server. Missing or wrong key returns 401.</p>
+<div class="warn"><p>Keys shipped inside an app can be extracted. Rotate the key on the server if it leaks.</p></div>
+
+<h2>Endpoints</h2>
+<table>
+<tr><th>Method and path</th><th>Use</th></tr>
+<tr><td><code>POST /v1/visuals</code></td><td>Many lines in one call (max 200). Best for a whole song.</td></tr>
+<tr><td><code>GET /v1/visual</code></td><td>One line, query parameters only.</td></tr>
+<tr><td><code>GET /health</code></td><td>No key needed. Use it to wake the server.</td></tr>
+</table>
+
+<h2>Request fields (POST /v1/visuals)</h2>
+<table>
+<tr><th>Field</th><th>Type</th><th>Meaning</th></tr>
+<tr><td><code>lines</code></td><td>string list</td><td>Required. One lyric line per scene.</td></tr>
+<tr><td><code>media</code></td><td>string</td><td><code>image</code> (default) or <code>video</code>.</td></tr>
+<tr><td><code>style</code></td><td>string</td><td>Optional words added to every search, such as <code>dark moody cinematic</code>.</td></tr>
+<tr><td><code>default_query</code></td><td>string</td><td>Fallback search when nothing matches. Default <code>abstract light</code>.</td></tr>
+</table>
+<p>GET /v1/visual takes <code>line</code>, <code>media</code> and <code>style</code> as query parameters.</p>
+
+<h2>Response</h2>
+<pre>[
+  {
+    "line": "I cry in the rain",
+    "query": "rain window",
+    "url": "https://cdn.pixabay.com/...",
+    "media": "image"
+  }
+]</pre>
+<p>The list has one item per input line, in the same order. <code>url</code> can be null if Pixabay returned nothing, so show a fallback background. Adjacent lines with the same <code>query</code> share the same <code>url</code>. Errors: 400 too many lines, 401 bad key, 503 server key not configured.</p>
+
+<h2>Code for your apps</h2>
+<div class="tabs" id="tabs"></div>
+<pre id="code"></pre>
+<p>Use long timeouts (60 to 90 seconds) and retry once. The free server sleeps when idle and the first call wakes it.</p>
+
+<h2>Try it</h2>
+<div class="try">
+  <input id="key" type="password" placeholder="Your API key" autocomplete="off">
+  <input id="line" value="I cry in the rain">
+  <select id="media"><option value="image">Image</option><option value="video">Video</option></select>
+  <button id="send">Send request</button>
+  <pre id="out">Response appears here.</pre>
+</div>
+</div>
+<script>
+const BASE=location.origin;
+document.getElementById('base').textContent=BASE;
+const SNIP={
+"curl":`curl -X POST ${BASE}/v1/visuals \\
+  -H "X-API-Key: YOUR_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"lines":["I cry in the rain","Take me home"],"media":"video","style":"cinematic"}'`,
+"Python (desktop)":`import requests
+
+r = requests.post("${BASE}/v1/visuals",
+    headers={"X-API-Key": "YOUR_KEY"},
+    json={"lines": ["I cry in the rain", "Take me home"],
+          "media": "image", "style": "cinematic"},
+    timeout=90)
+r.raise_for_status()
+for scene in r.json():
+    print(scene["line"], "->", scene["url"])`,
+"Kotlin (Android)":`// build.gradle: implementation("com.squareup.okhttp3:okhttp:4.12.0")
+// AndroidManifest: <uses-permission android:name="android.permission.INTERNET"/>
+// Run this off the main thread (coroutine with Dispatchers.IO)
+val client = OkHttpClient.Builder()
+    .callTimeout(90, TimeUnit.SECONDS).build()
+val json = """{"lines":["I cry in the rain"],"media":"image"}"""
+val req = Request.Builder()
+    .url("${BASE}/v1/visuals")
+    .header("X-API-Key", BuildConfig.VISUALS_KEY)
+    .post(json.toRequestBody("application/json".toMediaType()))
+    .build()
+client.newCall(req).execute().use { resp ->
+    val scenes = JSONArray(resp.body!!.string())
+    // images: load scenes.getJSONObject(i).getString("url") with Coil or Glide
+    // videos: play the same url with ExoPlayer (Media3)
+}`,
+"JavaScript":`const res = await fetch("${BASE}/v1/visuals", {
+  method: "POST",
+  headers: {"Content-Type": "application/json", "X-API-Key": "YOUR_KEY"},
+  body: JSON.stringify({lines: ["I cry in the rain"], media: "image"})
+});
+const scenes = await res.json();`,
+"C# (desktop)":`using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(90) };
+http.DefaultRequestHeaders.Add("X-API-Key", "YOUR_KEY");
+var body = new StringContent(
+  "{\\"lines\\":[\\"I cry in the rain\\"],\\"media\\":\\"image\\"}",
+  System.Text.Encoding.UTF8, "application/json");
+var resp = await http.PostAsync("${BASE}/v1/visuals", body);
+Console.WriteLine(await resp.Content.ReadAsStringAsync());`
+};
+const tabs=document.getElementById('tabs'),code=document.getElementById('code');
+Object.keys(SNIP).forEach((k,i)=>{
+  const b=document.createElement('button');b.textContent=k;
+  b.onclick=()=>{[...tabs.children].forEach(c=>c.classList.remove('on'));b.classList.add('on');code.textContent=SNIP[k]};
+  tabs.append(b);if(i===0)b.click();
+});
+document.getElementById('send').onclick=async()=>{
+  const out=document.getElementById('out');out.textContent='Waiting. The first call can take up to a minute.';
+  try{
+    const u=`${BASE}/v1/visual?line=${encodeURIComponent(document.getElementById('line').value)}&media=${document.getElementById('media').value}`;
+    const r=await fetch(u,{headers:{'X-API-Key':document.getElementById('key').value}});
+    out.textContent=r.status+'\n'+JSON.stringify(await r.json(),null,2);
+  }catch(e){out.textContent='Failed: '+e.message}
+};
+</script>
+</body>
+</html>
